@@ -1,0 +1,15 @@
+# YOLOv8 Dataset Configuration
+# Project  : OvaPredict AI — Oocyte Maturation Prediction
+# Dataset  : instance_Seg v7 (Roboflow)  —  CC BY 4.0
+# Classes  : COC_will_mature | COC_will_not_mature
+
+path: C:/Users/chaze/Downloads/arifauvas/data/instance_Seg.v7i.yolov8
+
+train: train/images      # 630 images
+val:   valid/images      #  60 images
+test:  test/images       #  30 images
+
+nc: 2
+names:
+  0: COC_will_mature        # oocyte will mature  (positive class)
+  1: COC_will_not_mature    # oocyte will NOT mature

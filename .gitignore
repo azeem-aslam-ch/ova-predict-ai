@@ -1,0 +1,29 @@
+# ── Dataset (600+ images — too large for GitHub) ──────────────────────────────
+data/
+
+# ── Model weights (23 MB each — use Git LFS or download separately) ───────────
+results/train/weights/
+results/train/last.pt
+results/train/best.pt
+
+# ── Training batch images (auto-generated, not needed in repo) ────────────────
+results/train/train_batch*.jpg
+results/train/val_batch*.jpg
+results/test_eval/val_batch*.jpg
+
+# ── Prediction outputs (generated per-run) ────────────────────────────────────
+results/predictions/
+
+# ── Downloaded base model weights ─────────────────────────────────────────────
+yolov8*.pt
+yolo*.pt
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Temp / log files ──────────────────────────────────────────────────────────
+install_log.txt
+*.tmp
+.env
