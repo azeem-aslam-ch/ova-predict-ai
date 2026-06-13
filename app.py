@@ -16,7 +16,6 @@ Features:
 import io
 import json
 import re
-import tempfile
 from pathlib import Path
 
 import cv2
@@ -607,20 +606,16 @@ with tab_predict:
                 except Exception as _e2:
                     img_read_error = str(_e2)
 
-            # ── Write temp file for YOLO (needs a file path) ─────────────────
-            suffix = Path(uploaded.name).suffix or ".jpg"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(img_bytes)
-                tmp_path = Path(tmp.name)
-
             if img_bgr is None:
                 st.error(f"Could not read image: {img_read_error or 'unknown error'}")
             else:
 
                 # ── Run prediction ────────────────────────────────────────────
+                # Pass numpy array directly — avoids YOLO re-reading the file
+                # (which would fail on non-standard microscopy PNG formats)
                 with st.spinner("Analyzing image..."):
                     results = model.predict(
-                        source  = str(tmp_path),
+                        source  = img_bgr,
                         conf    = conf_thresh,
                         verbose = False,
                     )
@@ -802,4 +797,3 @@ with tab_predict:
                             })
                         st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
-            tmp_path.unlink(missing_ok=True)
