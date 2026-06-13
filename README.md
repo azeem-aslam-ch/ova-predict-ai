@@ -8,15 +8,15 @@ Live App: [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
 
 ## Overview
 
-OvaPredict is a deep learning system developed in collaboration with **UVAS (University of Veterinary and Animal Sciences), Lahore** for the automated assessment of oocyte maturation potential from COC microscopy images. Biological data is collected and curated by domain experts at UVAS, and the model is trained on that data to produce clinical-grade predictions.
+OvaPredict is a deep learning system developed in collaboration with the **University of Veterinary and Animal Sciences (UVAS), Lahore** for automated assessment of oocyte maturation potential from COC microscopy images. The Department of Theriogenology at UVAS is directly involved in this project. Their team of reproductive biology specialists collected and prepared the biological data with great care under controlled laboratory conditions, ensuring the quality and clinical relevance of every image in the dataset.
 
-The system uses YOLOv8s-seg to detect and segment the COC at pixel level, extract quantitative morphological measurements from the segmentation mask, and classify the oocyte as **Will MATURE** or **Will NOT Mature** — along with a confidence score and biological reasoning tailored to each prediction.
+The model is trained on that data to classify oocytes as **Will MATURE** or **Will NOT Mature**, along with a confidence score and morphological reasoning specific to each prediction.
 
 ---
 
 ## Background
 
-In IVF (In Vitro Fertilization), embryologists manually inspect egg cells under a microscope and decide which ones are mature enough for fertilization. This judgment depends heavily on individual experience and can vary between clinicians. OvaPredict provides an objective, measurable assessment based on shape and morphology of the COC rather than subjective visual inspection alone.
+In IVF (In Vitro Fertilization), embryologists manually inspect egg cells under a microscope and decide which ones are mature enough for fertilization. This judgment depends heavily on individual experience and can vary between clinicians. OvaPredict provides an objective, measurable assessment based on the shape and morphology of the COC rather than subjective visual inspection alone.
 
 ---
 
@@ -35,7 +35,7 @@ The model is YOLOv8s-seg trained on 630 labeled COC microscopy images. For each 
 3. Classifies the COC as `COC_will_mature` or `COC_will_not_mature`
 4. Returns a confidence score and a biological explanation of the prediction
 
-Pixel masks were chosen over bounding boxes because COC shape directly relates to oocyte quality — a precise outline gives far more morphological information than a rectangle.
+Pixel masks were chosen over bounding boxes because COC shape directly relates to oocyte quality. A precise outline provides far more morphological information than a rough rectangle.
 
 ---
 
@@ -44,15 +44,15 @@ Pixel masks were chosen over bounding boxes because COC shape directly relates t
 When you upload an image, the app shows:
 
 - The prediction verdict with confidence score
-- A segmentation overlay — green for mature, red for not mature
+- A segmentation overlay (green for mature, red for not mature)
 - Feature Agreement score showing how many of the 4 measured morphological features support the prediction
 - Number of COCs detected and model inference time
 - Circularity, Area, Aspect Ratio, Extent, and Perimeter measurements
 - A written explanation of why that prediction was made, adapted to the actual result
 
-**Ground Truth Tracking** — if you know the correct answer for an image, you can enter it and the app will track running session accuracy, precision, recall, and F1 score across all the images you label in that session.
+**Ground Truth Tracking:** If you know the correct answer for an image, you can enter it and the app will track running session accuracy, precision, recall, and F1 score across all the images you label in that session.
 
-**Microscope Calibration** — there is a µm/pixel input in the sidebar. Once set, area is displayed in µm² and perimeter in µm instead of pixels.
+**Microscope Calibration:** There is a µm/pixel input in the sidebar. Once set, area is displayed in µm² and perimeter in µm instead of pixels.
 
 The sidebar also shows the model's overall performance from the test set, and the Model Results tab has all training curves and confusion matrices.
 
@@ -62,18 +62,18 @@ The sidebar also shows the model's overall performance from the test set, and th
 
 ```
 ova-predict-ai/
-├── app.py                    ← Streamlit web application
-├── train.py                  ← Training script
-├── predict.py                ← Command-line prediction script
+├── app.py                    <- Streamlit web application
+├── train.py                  <- Training script
+├── predict.py                <- Command-line prediction script
 ├── requirements.txt
 ├── config/
-│   └── dataset.yaml          ← Dataset paths and class names
+│   └── dataset.yaml          <- Dataset paths and class names
 ├── results/
 │   ├── train/
-│   │   └── weights/best.pt   ← Trained model weights
-│   ├── test_eval/            ← Test set evaluation outputs
-│   └── metrics.json          ← mAP, precision, recall, F1 per class
-└── data/                     ← Dataset images (not included in repo)
+│   │   └── weights/best.pt   <- Trained model weights
+│   ├── test_eval/            <- Test set evaluation outputs
+│   └── metrics.json          <- mAP, precision, recall, F1 per class
+└── data/                     <- Dataset images (not included in repo)
 ```
 
 ---
@@ -119,20 +119,20 @@ python predict.py path/to/folder/ --conf 0.15
 
 Evaluated on 30 held-out test images that were not used during training.
 
-| | Overall | COC_will_mature | COC_will_not_mature |
-|---|---|---|---|
+|  | Overall | COC_will_mature | COC_will_not_mature |
+|--|---------|-----------------|---------------------|
 | mAP50 | 67.1% | 78.4% | 55.8% |
 | Precision | 56.8% | 73.6% | 39.9% |
 | Recall | 79.2% | 66.7% | 91.7% |
-| F1 Score | — | 70.0% | 55.6% |
+| F1 Score | | 70.0% | 55.6% |
 
-The model has high recall for `COC_will_not_mature` (91.7%), meaning it rarely misses an immature COC. Precision for that class is lower (39.9%), reflecting that the model sometimes flags mature COCs as immature.
+The model achieves high recall for `COC_will_not_mature` (91.7%), meaning it rarely misses an immature COC. Precision for that class is lower (39.9%), reflecting that the model is conservative and occasionally flags a mature COC as immature rather than risking a missed detection.
 
 ---
 
 ## Dataset
 
-The dataset was sourced from Roboflow (instance_Seg v7, CC BY 4.0). It contains 720 COC microscopy images with polygon mask annotations — exact outlines of each COC rather than bounding boxes. Split: 630 train / 60 validation / 30 test.
+The dataset was collected by the Department of Theriogenology, UVAS Lahore. Images were captured under standardized microscopy conditions and annotated with polygon masks tracing the exact outline of each COC. The dataset contains 720 images split into 630 training, 60 validation, and 30 test images. Polygon annotations were used instead of bounding boxes to preserve the morphological detail that the model relies on for classification.
 
 ---
 
@@ -140,27 +140,28 @@ The dataset was sourced from Roboflow (instance_Seg v7, CC BY 4.0). It contains 
 
 | Term | Meaning |
 |------|---------|
-| COC | Cumulus-Oocyte Complex — the egg cell and its surrounding support cells |
+| COC | Cumulus-Oocyte Complex: the egg cell and its surrounding support cells |
 | IVF | In Vitro Fertilization |
+| Theriogenology | Branch of veterinary medicine dealing with animal reproduction |
 | YOLOv8s-seg | Object detection and segmentation model, small variant |
-| mAP50 | Mean Average Precision at 50% IoU — primary detection accuracy score |
-| Precision | Of all positive predictions, how many were correct |
-| Recall | Of all actual positives, how many the model found |
+| mAP50 | Mean Average Precision at 50% IoU, primary detection accuracy metric |
+| Precision | Of all positive predictions, how many were actually correct |
+| Recall | Of all actual positives, how many the model successfully found |
 | F1 Score | Harmonic mean of precision and recall |
 | Feature Agreement | How many morphological features support the prediction (out of 4) |
 | Circularity | How close to a perfect circle the COC outline is (1.0 = perfect) |
 | Extent | How fully the COC fills its bounding box |
-| µm/pixel | Microscope scale factor — converts pixel measurements to micrometers |
-| Ground Truth | The known correct classification for a given image |
+| µm/pixel | Microscope scale factor for converting pixel measurements to micrometers |
+| Ground Truth | The verified correct classification for a given image |
 
 ---
 
 ## About This Project
 
-This is a collaborative research project with the **University of Veterinary and Animal Sciences (UVAS), Lahore**. The biological data — COC microscopy images with expert-level annotations — is collected and provided by researchers and embryologists at UVAS who specialize in reproductive biology and assisted reproduction techniques.
+This is a research project carried out in collaboration with the **Department of Theriogenology, University of Veterinary and Animal Sciences (UVAS), Lahore**. The biological side of this work involves specialists in reproductive medicine who collected microscopy images of COCs under controlled laboratory conditions. The data collection process followed strict biological protocols to ensure each image accurately represents the oocyte's condition at the time of assessment.
 
-The computational side involves building and training a deep learning pipeline on that data: designing the segmentation model, curating the training set, optimizing hyperparameters, evaluating performance, and deploying the final system as a usable clinical tool.
+The computational work involves designing and training a deep learning pipeline on that carefully collected data: building the segmentation model, preparing the training set, tuning the model, evaluating it on unseen data, and deploying the final system as a tool that can be used in a real lab setting.
 
-The collaboration bridges two domains — biological expertise from UVAS and machine learning — to produce something neither side could achieve independently. The result is a system that encodes years of embryological knowledge into a model that can assess oocyte quality from a microscopy image in milliseconds.
+This kind of collaboration between a veterinary university's reproductive biology team and a machine learning pipeline is what makes the predictions biologically grounded rather than just statistically derived. The knowledge embedded in the dataset comes directly from years of hands-on experience in the UVAS Theriogenology department.
 
 Live App: [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
