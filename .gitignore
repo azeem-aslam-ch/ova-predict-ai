@@ -1,10 +1,8 @@
 # ── Dataset (600+ images — too large for GitHub) ──────────────────────────────
 data/
 
-# ── Model weights (23 MB each — use Git LFS or download separately) ───────────
-results/train/weights/
+# ── Model weights — last.pt excluded (large), best.pt included for deployment ──
 results/train/last.pt
-results/train/best.pt
 
 # ── Training batch images (auto-generated, not needed in repo) ────────────────
 results/train/train_batch*.jpg

@@ -7,6 +7,20 @@
     "COC_will_mature",
     "COC_will_not_mature"
   ],
+  "class_metrics": {
+    "COC_will_mature": {
+      "mAP50": 0.7845,
+      "precision": 0.7363,
+      "recall": 0.6667,
+      "f1": 0.7000
+    },
+    "COC_will_not_mature": {
+      "mAP50": 0.5578,
+      "precision": 0.3995,
+      "recall": 0.9167,
+      "f1": 0.5565
+    }
+  },
   "model": "YOLOv8s-seg",
   "device": "NVIDIA GeForce RTX 5070 Ti Laptop GPU",
   "dataset": "instance_Seg v7 (Roboflow)",

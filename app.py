@@ -14,6 +14,7 @@ Features:
 """
 
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -172,15 +173,58 @@ def extract_features(mask_xy: np.ndarray, img_shape: tuple) -> dict:
     }
 
 
+# ── Feature agreement score ──────────────────────────────────────────────────
+def feature_agreement(is_mature: bool, feats: dict) -> tuple[int, int]:
+    """
+    Return (agreeing, total) count of morphological features that support
+    the predicted class. Higher agreement = more trustworthy prediction.
+    """
+    checks = [
+        feats.get("circularity", 0) >= 0.65,          # round = mature-supporting
+        feats.get("area_pct", 0) >= 5.0,              # large complex = mature-supporting
+        feats.get("extent", 0) >= 0.55,               # dense cumulus = mature-supporting
+        0.80 <= feats.get("aspect_ratio", 1) <= 1.20, # symmetrical = mature-supporting
+    ]
+    mature_support = sum(checks)
+    if is_mature:
+        return mature_support, len(checks)
+    else:
+        return len(checks) - mature_support, len(checks)
+
+
+# ── Session accuracy tracker ─────────────────────────────────────────────────
+def compute_session_metrics(results: dict) -> dict | None:
+    labeled = list(results.values())
+    if not labeled:
+        return None
+    n             = len(labeled)
+    correct_count = sum(1 for r in labeled if r["correct"])
+    tp = sum(1 for r in labeled if r["predicted"] == "mature"     and r["ground_truth"] == "mature")
+    fp = sum(1 for r in labeled if r["predicted"] == "mature"     and r["ground_truth"] == "not_mature")
+    fn = sum(1 for r in labeled if r["predicted"] == "not_mature" and r["ground_truth"] == "mature")
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    return {
+        "total"    : n,
+        "correct"  : correct_count,
+        "accuracy" : correct_count / n,
+        "precision": precision,
+        "recall"   : recall,
+        "f1"       : f1,
+    }
+
+
 # ── Reason generator ─────────────────────────────────────────────────────────
 def build_reasons(is_mature: bool, conf: float, feats: dict) -> list[dict]:
     """
     Return a list of {icon, text} dicts explaining the prediction.
-    Each reason ties a measured feature value to biological meaning.
+    Each reason ties a measured feature value to biological meaning,
+    conditioned on the actual prediction (is_mature).
     """
     reasons = []
 
-    # 1. Confidence
+    # 1. Confidence (same regardless of class)
     if conf >= 0.80:
         reasons.append({
             "icon": "🎯",
@@ -200,69 +244,111 @@ def build_reasons(is_mature: bool, conf: float, feats: dict) -> list[dict]:
     # 2. Circularity
     circ = feats.get("circularity", 0)
     if circ >= 0.78:
-        reasons.append({
-            "icon": "⭕",
-            "text": f"COC is **highly circular** (circularity = {circ:.3f}). A round, symmetric oocyte is a strong indicator of maturity.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "⭕",
+                "text": f"COC is **highly circular** (circularity = {circ:.3f}). A round, symmetric oocyte is a strong indicator of maturity.",
+            })
+        else:
+            reasons.append({
+                "icon": "⭕",
+                "text": f"COC is **highly circular** (circularity = {circ:.3f}), but other morphological features override this and suggest immaturity.",
+            })
     elif circ >= 0.55:
         reasons.append({
             "icon": "🔵",
             "text": f"COC shape is **moderately circular** (circularity = {circ:.3f}). Shape is acceptable but not ideal.",
         })
     else:
-        reasons.append({
-            "icon": "🔷",
-            "text": f"COC has an **irregular shape** (circularity = {circ:.3f}). Irregular oocytes are often associated with immaturity.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "🔷",
+                "text": f"COC has an **irregular shape** (circularity = {circ:.3f}), but the model predicts maturity based on other features.",
+            })
+        else:
+            reasons.append({
+                "icon": "🔷",
+                "text": f"COC has an **irregular shape** (circularity = {circ:.3f}). Irregular oocytes are often associated with immaturity.",
+            })
 
     # 3. COC size
     area_pct = feats.get("area_pct", 0)
     if area_pct >= 12:
-        reasons.append({
-            "icon": "📏",
-            "text": f"COC occupies **{area_pct:.1f}%** of the image — a large, well-expanded cumulus complex, typical of mature eggs.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "📏",
+                "text": f"COC occupies **{area_pct:.1f}%** of the image — a large, well-expanded cumulus complex, typical of mature eggs.",
+            })
+        else:
+            reasons.append({
+                "icon": "📏",
+                "text": f"COC occupies **{area_pct:.1f}%** of the image. Large size is present but may reflect overexpansion or poor quality.",
+            })
     elif area_pct >= 4:
         reasons.append({
             "icon": "📏",
             "text": f"COC size is **moderate** ({area_pct:.1f}% of image), within normal range.",
         })
     else:
-        reasons.append({
-            "icon": "📏",
-            "text": f"COC is **small** ({area_pct:.1f}% of image). Small complexes may not have fully expanded cumulus cells.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "📏",
+                "text": f"COC is **small** ({area_pct:.1f}% of image), but the model predicts maturity based on overall morphology.",
+            })
+        else:
+            reasons.append({
+                "icon": "📏",
+                "text": f"COC is **small** ({area_pct:.1f}% of image). Small complexes may not have fully expanded cumulus cells.",
+            })
 
     # 4. Extent (cumulus density)
     extent = feats.get("extent", 0)
     if extent >= 0.70:
-        reasons.append({
-            "icon": "🧫",
-            "text": f"Cumulus cells are **compact and dense** (extent = {extent:.3f}), which is characteristic of a mature COC.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "🧫",
+                "text": f"Cumulus cells are **compact and dense** (extent = {extent:.3f}), which is characteristic of a mature COC.",
+            })
+        else:
+            reasons.append({
+                "icon": "🧫",
+                "text": f"Cumulus cells appear **compact** (extent = {extent:.3f}), but density alone does not confirm maturity.",
+            })
     elif extent >= 0.45:
         reasons.append({
             "icon": "🧫",
             "text": f"Cumulus density is **average** (extent = {extent:.3f}).",
         })
     else:
-        reasons.append({
-            "icon": "🧫",
-            "text": f"Cumulus cells appear **sparse or expanded** (extent = {extent:.3f}). Loose cumulus can indicate either maturity or poor quality depending on context.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "🧫",
+                "text": f"Cumulus cells appear **sparse** (extent = {extent:.3f}), but the model predicts maturity based on overall morphology.",
+            })
+        else:
+            reasons.append({
+                "icon": "🧫",
+                "text": f"Cumulus cells appear **sparse or expanded** (extent = {extent:.3f}). Loose cumulus can indicate immaturity or poor quality.",
+            })
 
     # 5. Aspect ratio
     ar = feats.get("aspect_ratio", 1)
     if 0.85 <= ar <= 1.15:
         reasons.append({
             "icon": "↔️",
-            "text": f"COC is **nearly symmetrical** (aspect ratio = {ar:.2f}), further supporting a healthy round morphology.",
+            "text": f"COC is **nearly symmetrical** (aspect ratio = {ar:.2f}), supporting a healthy round morphology.",
         })
     else:
-        reasons.append({
-            "icon": "↔️",
-            "text": f"COC has **asymmetry** (aspect ratio = {ar:.2f}), meaning it is elongated in one direction.",
-        })
+        if is_mature:
+            reasons.append({
+                "icon": "↔️",
+                "text": f"COC has **asymmetry** (aspect ratio = {ar:.2f}), but elongation did not prevent a mature prediction.",
+            })
+        else:
+            reasons.append({
+                "icon": "↔️",
+                "text": f"COC has **asymmetry** (aspect ratio = {ar:.2f}), meaning it is elongated — not typical of a mature spherical oocyte.",
+            })
 
     return reasons
 
@@ -314,6 +400,44 @@ with st.sidebar:
     )
     show_all = st.checkbox("Show all detections table", value=False)
 
+    st.divider()
+    st.subheader("🔭 Microscope Calibration")
+    um_per_px = st.number_input(
+        "Scale (µm / pixel)",
+        min_value=0.01, max_value=50.0,
+        value=1.0, step=0.01, format="%.3f",
+        help=(
+            "Set this from your microscope software (e.g. ImageJ scale bar).  \n"
+            "Typical values:  \n"
+            "• 4× objective ≈ 2–4 µm/px  \n"
+            "• 10× objective ≈ 0.5–1 µm/px  \n"
+            "• 20× objective ≈ 0.25–0.5 µm/px  \n"
+            "Leave at 1.0 if unknown (measurements shown in pixels)."
+        ),
+    )
+    calibrated = um_per_px != 1.0
+
+    st.divider()
+    st.subheader("📈 Session Accuracy")
+    _sm = compute_session_metrics(st.session_state.get("gt_results", {}))
+    if _sm:
+        st.caption(f"Based on {_sm['total']} labeled image(s) this session.")
+        _sa1, _sa2 = st.columns(2)
+        _sa1.metric("Accuracy",  f"{_sm['accuracy']*100:.1f}%",
+                    help=f"{_sm['correct']}/{_sm['total']} correct predictions")
+        _sa2.metric("F1 Score",  f"{_sm['f1']*100:.1f}%",
+                    help="Harmonic mean of Precision and Recall")
+        _sa1.metric("Precision", f"{_sm['precision']*100:.1f}%",
+                    help="Of 'Will MATURE' predictions, how many were correct")
+        _sa2.metric("Recall",    f"{_sm['recall']*100:.1f}%",
+                    help="Of actual 'Will MATURE' cases, how many did model find")
+        if st.button("🗑️ Reset Session", use_container_width=True):
+            st.session_state.gt_results = {}
+            st.rerun()
+    else:
+        st.caption("No ground truth entered yet.")
+        st.info("Upload images and select correct answers in the Prediction tab to see live accuracy here.")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN AREA — TABS
@@ -339,10 +463,10 @@ with tab_results:
         r1c1, r1c2 = st.columns(2)
         p = TRAIN_DIR / "results.png"
         if p.exists():
-            r1c1.image(str(p), caption="Training & Validation Loss + Metrics (all epochs)", use_container_width=True)
+            r1c1.image(str(p), caption="Training & Validation Loss + Metrics (all epochs)", width='stretch')
         p = TRAIN_DIR / "confusion_matrix_normalized.png"
         if p.exists():
-            r1c2.image(str(p), caption="Confusion Matrix — Normalized (Validation Set)", use_container_width=True)
+            r1c2.image(str(p), caption="Confusion Matrix — Normalized (Validation Set)", width='stretch')
 
         st.divider()
         st.markdown("### Bounding Box Metrics")
@@ -351,18 +475,18 @@ with tab_results:
         r2c1, r2c2 = st.columns(2)
         p = TRAIN_DIR / "BoxPR_curve.png"
         if p.exists():
-            r2c1.image(str(p), caption="Precision-Recall Curve (Box)", use_container_width=True)
+            r2c1.image(str(p), caption="Precision-Recall Curve (Box)", width='stretch')
         p = TRAIN_DIR / "BoxF1_curve.png"
         if p.exists():
-            r2c2.image(str(p), caption="F1-Confidence Curve (Box)", use_container_width=True)
+            r2c2.image(str(p), caption="F1-Confidence Curve (Box)", width='stretch')
 
         r3c1, r3c2 = st.columns(2)
         p = TRAIN_DIR / "BoxP_curve.png"
         if p.exists():
-            r3c1.image(str(p), caption="Precision-Confidence Curve (Box)", use_container_width=True)
+            r3c1.image(str(p), caption="Precision-Confidence Curve (Box)", width='stretch')
         p = TRAIN_DIR / "BoxR_curve.png"
         if p.exists():
-            r3c2.image(str(p), caption="Recall-Confidence Curve (Box)", use_container_width=True)
+            r3c2.image(str(p), caption="Recall-Confidence Curve (Box)", width='stretch')
 
         st.divider()
         st.markdown("### Segmentation Mask Metrics")
@@ -371,18 +495,18 @@ with tab_results:
         r4c1, r4c2 = st.columns(2)
         p = TRAIN_DIR / "MaskPR_curve.png"
         if p.exists():
-            r4c1.image(str(p), caption="Precision-Recall Curve (Mask)", use_container_width=True)
+            r4c1.image(str(p), caption="Precision-Recall Curve (Mask)", width='stretch')
         p = TRAIN_DIR / "MaskF1_curve.png"
         if p.exists():
-            r4c2.image(str(p), caption="F1-Confidence Curve (Mask)", use_container_width=True)
+            r4c2.image(str(p), caption="F1-Confidence Curve (Mask)", width='stretch')
 
         r5c1, r5c2 = st.columns(2)
         p = TRAIN_DIR / "MaskP_curve.png"
         if p.exists():
-            r5c1.image(str(p), caption="Precision-Confidence Curve (Mask)", use_container_width=True)
+            r5c1.image(str(p), caption="Precision-Confidence Curve (Mask)", width='stretch')
         p = TRAIN_DIR / "MaskR_curve.png"
         if p.exists():
-            r5c2.image(str(p), caption="Recall-Confidence Curve (Mask)", use_container_width=True)
+            r5c2.image(str(p), caption="Recall-Confidence Curve (Mask)", width='stretch')
 
         st.divider()
         st.markdown("### Sample Predictions (Validation Set)")
@@ -390,10 +514,10 @@ with tab_results:
         r6c1, r6c2 = st.columns(2)
         p = TRAIN_DIR / "val_batch0_labels.jpg"
         if p.exists():
-            r6c1.image(str(p), caption="Ground Truth Labels", use_container_width=True)
+            r6c1.image(str(p), caption="Ground Truth Labels", width='stretch')
         p = TRAIN_DIR / "val_batch0_pred.jpg"
         if p.exists():
-            r6c2.image(str(p), caption="Model Predictions", use_container_width=True)
+            r6c2.image(str(p), caption="Model Predictions", width='stretch')
 
         st.divider()
         st.markdown("### Test Set Evaluation (Final — 30 images)")
@@ -402,40 +526,38 @@ with tab_results:
         t1c1, t1c2 = st.columns(2)
         p = TEST_DIR_R / "confusion_matrix_normalized.png"
         if p.exists():
-            t1c1.image(str(p), caption="Confusion Matrix — Test Set (Normalized)", use_container_width=True)
+            t1c1.image(str(p), caption="Confusion Matrix — Test Set (Normalized)", width='stretch')
         p = TEST_DIR_R / "BoxPR_curve.png"
         if p.exists():
-            t1c2.image(str(p), caption="Precision-Recall Curve — Test Set", use_container_width=True)
+            t1c2.image(str(p), caption="Precision-Recall Curve — Test Set", width='stretch')
 
         t2c1, t2c2 = st.columns(2)
         p = TEST_DIR_R / "BoxF1_curve.png"
         if p.exists():
-            t2c1.image(str(p), caption="F1 Curve — Test Set", use_container_width=True)
+            t2c1.image(str(p), caption="F1 Curve — Test Set", width='stretch')
         p = TEST_DIR_R / "val_batch0_pred.jpg"
         if p.exists():
-            t2c2.image(str(p), caption="Sample Test Predictions", use_container_width=True)
+            t2c2.image(str(p), caption="Sample Test Predictions", width='stretch')
 
         st.divider()
         st.markdown("### Training Labels Distribution")
         p = TRAIN_DIR / "labels.jpg"
         if p.exists():
-            st.image(str(p), caption="Training Set — Label Distribution & Bounding Box Stats", use_container_width=True)
+            st.image(str(p), caption="Training Set — Label Distribution & Bounding Box Stats", width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TAB 1 — PREDICTION
 # ─────────────────────────────────────────────────────────────────────────────
 with tab_predict:
+    if "gt_results" not in st.session_state:
+        st.session_state.gt_results = {}
+
     st.markdown(
         "Upload a **microscopy image** of a Cumulus-Oocyte Complex (COC). "
         "The AI model will predict whether the oocyte **will mature** or **will not mature**, "
         "along with biological reasoning behind the prediction."
     )
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  PREDICTION LOGIC  (runs inside tab_predict context)
-# ─────────────────────────────────────────────────────────────────────────────
-with tab_predict:
 
     # Load model
     model = load_model()
@@ -465,7 +587,6 @@ with tab_predict:
             img_bgr = cv2.imread(str(tmp_path))
             if img_bgr is None:
                 st.error("Could not read image. Please try a different file.")
-                tmp_path.unlink(missing_ok=True)
             else:
                 img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
@@ -482,7 +603,7 @@ with tab_predict:
                 col1, col2 = st.columns(2, gap="medium")
                 with col1:
                     st.subheader("Original Image")
-                    st.image(img_rgb, caption=uploaded.name, use_container_width=True)
+                    st.image(img_rgb, caption=uploaded.name, width='stretch')
 
                 if res.boxes is None or len(res.boxes) == 0:
                     with col2:
@@ -499,6 +620,13 @@ with tab_predict:
                     best_cls  = cls_ids[best_idx]
                     best_conf = confs_arr[best_idx]
                     is_mature = best_cls == 0
+                    infer_ms  = res.speed.get('inference', 0)
+
+                    # ── Pre-compute morphological features ────────────────────
+                    feats = {}
+                    if masks_xy and best_idx < len(masks_xy):
+                        feats = extract_features(masks_xy[best_idx], img_bgr.shape)
+                    agree, agree_total = feature_agreement(is_mature, feats) if feats else (0, 4)
 
                     # ── Overlay ───────────────────────────────────────────────
                     with col2:
@@ -510,7 +638,7 @@ with tab_predict:
                         else:
                             overlay_rgb = img_rgb
                             caption = "No mask available"
-                        st.image(overlay_rgb, caption=caption, use_container_width=True)
+                        st.image(overlay_rgb, caption=caption, width='stretch')
 
                     # ── Verdict ───────────────────────────────────────────────
                     st.divider()
@@ -527,42 +655,93 @@ with tab_predict:
                     st.markdown(f"**Model Confidence: {best_conf*100:.1f}%**")
                     st.progress(float(best_conf))
 
-                    # ── Model performance metrics ─────────────────────────────
+                    # ── Ground Truth Input ────────────────────────────────────
                     st.divider()
-                    st.subheader("📊 Model Performance on Test Set")
-                    st.caption("Overall accuracy — evaluated on 30 unseen test images during training.")
-                    if metrics:
-                        mc1, mc2, mc3, mc4 = st.columns(4)
-                        mc1.metric("mAP50",     f"{metrics['mAP50']*100:.1f}%",
-                                   help="Mean Average Precision @ IoU 0.50")
-                        mc2.metric("mAP50-95",  f"{metrics['mAP50_95']*100:.1f}%",
-                                   help="Mean Average Precision @ IoU 0.50–0.95")
-                        mc3.metric("Precision", f"{metrics['precision']*100:.1f}%",
-                                   help="Of all detections, how many were correct")
-                        mc4.metric("Recall",    f"{metrics['recall']*100:.1f}%",
-                                   help="Of all actual COCs, how many were found")
-                        st.markdown("""
-| Class | mAP50 | Recall |
-|---|---|---|
-| ✅ COC_will_mature | 78.4% | 66.7% |
-| ❌ COC_will_not_mature | 55.8% | 91.7% |
-""")
+                    st.subheader("🏷️ Do You Know the Correct Answer?")
+                    st.caption("Optional — provide ground truth to track real-time session accuracy in the sidebar.")
+                    img_key   = f"{uploaded.name}_{uploaded.size}"
+                    gt_choice = st.radio(
+                        "Actual result for this COC image:",
+                        ["❓ Don't Know", "✅ Will MATURE", "❌ Will NOT Mature"],
+                        key=f"gt_{img_key}",
+                        horizontal=True,
+                    )
+                    if gt_choice != "❓ Don't Know":
+                        gt_is_mature = gt_choice.startswith("✅")
+                        correct      = (is_mature == gt_is_mature)
+                        st.session_state.gt_results[img_key] = {
+                            "filename"    : uploaded.name,
+                            "predicted"   : "mature" if is_mature else "not_mature",
+                            "ground_truth": "mature" if gt_is_mature else "not_mature",
+                            "confidence"  : best_conf,
+                            "correct"     : correct,
+                        }
+                        if correct:
+                            st.success(
+                                f"✅ **Correct!** Model predicted "
+                                f"**{'Will MATURE' if is_mature else 'Will NOT Mature'}** "
+                                f"— matches ground truth."
+                            )
+                        else:
+                            st.error(
+                                f"❌ **Incorrect!** Model predicted "
+                                f"**{'Will MATURE' if is_mature else 'Will NOT Mature'}** "
+                                f"but actual is "
+                                f"**{'Will MATURE' if gt_is_mature else 'Will NOT Mature'}**."
+                            )
+                    else:
+                        st.session_state.gt_results.pop(img_key, None)
+
+                    # ── Real-time prediction stats ────────────────────────────
+                    st.divider()
+                    st.subheader("📊 This Image — Real-Time Results")
+                    st.caption("All values calculated live from this specific image.")
+                    rc1, rc2, rc3, rc4 = st.columns(4)
+                    rc1.metric(
+                        "Confidence",
+                        f"{best_conf*100:.1f}%",
+                        help="How certain the model is about this prediction (0–100%)",
+                    )
+                    rc2.metric(
+                        "Feature Agreement",
+                        f"{agree}/{agree_total}",
+                        help=f"{agree} of {agree_total} morphological features support this prediction",
+                    )
+                    rc3.metric(
+                        "COCs Detected",
+                        str(len(cls_ids)),
+                        help="Total number of COC objects found in this image",
+                    )
+                    rc4.metric(
+                        "Inference Time",
+                        f"{infer_ms:.1f} ms",
+                        help="Time taken by the model to analyze this image",
+                    )
 
                     # ── Features + Reasons ────────────────────────────────────
                     st.divider()
-                    feats = {}
-                    if masks_xy and best_idx < len(masks_xy):
-                        feats = extract_features(masks_xy[best_idx], img_bgr.shape)
-
                     col3, col4 = st.columns(2, gap="large")
                     with col3:
                         st.subheader("Morphological Measurements")
                         if feats:
-                            st.metric("COC Area",     f"{feats['area_px']:,} px ({feats['area_pct']}%)")
+                            if calibrated:
+                                area_val  = feats['area_px'] * (um_per_px ** 2)
+                                perim_val = feats['perimeter'] * um_per_px
+                                area_str  = f"{area_val:,.1f} µm²  ({feats['area_pct']}% of image)"
+                                perim_str = f"{perim_val:.1f} µm"
+                            else:
+                                area_str  = f"{feats['area_px']:,} px²  ({feats['area_pct']}% of image)"
+                                perim_str = f"{feats['perimeter']} px"
+                            st.metric("COC Area",     area_str)
                             st.metric("Circularity",  f"{feats['circularity']}  (max = 1.0)")
                             st.metric("Aspect Ratio", f"{feats['aspect_ratio']}  (1.0 = perfect circle)")
                             st.metric("Extent",       f"{feats['extent']}  (1.0 = full bounding box)")
-                            st.metric("Perimeter",    f"{feats['perimeter']} px")
+                            st.metric("Perimeter",    perim_str)
+                            if not calibrated:
+                                st.caption(
+                                    "⚠️ Set **Scale (µm/pixel)** in the sidebar to convert "
+                                    "Area and Perimeter to physical units (µm², µm)."
+                                )
                         else:
                             st.info("Mask not available.")
 
@@ -572,9 +751,7 @@ with tab_predict:
                             reasons   = build_reasons(is_mature, best_conf, feats)
                             card_cls  = "feature-card" if is_mature else "feature-card-red"
                             for r in reasons:
-                                txt = r["text"].replace("**", "<strong>", 1)
-                                while "**" in txt:
-                                    txt = txt.replace("**", "</strong>", 1)
+                                txt = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', r["text"])
                                 st.markdown(
                                     f'<div class="{card_cls}">{r["icon"]}&nbsp;&nbsp;{txt}</div>',
                                     unsafe_allow_html=True,
@@ -596,6 +773,6 @@ with tab_predict:
                                 "Confidence": f"{cf*100:.1f}%",
                                 "Primary": "⭐ Yes" if i == best_idx else "",
                             })
-                        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
-                tmp_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)

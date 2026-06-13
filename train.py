@@ -17,6 +17,7 @@ from pathlib import Path
 import torch
 from ultralytics import YOLO
 
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT        = Path(__file__).resolve().parent
 DATA_YAML   = ROOT / "config" / "dataset.yaml"     # dataset config (v7)
@@ -87,18 +88,39 @@ def main() -> None:
     )
 
     # ── Step 4: Save metrics to JSON (Streamlit app reads this) ───────────────
+    class_names_list = ["COC_will_mature", "COC_will_not_mature"]
+    class_metrics = {}
+    try:
+        ap50_list      = test_results.box.ap50
+        precision_list = test_results.box.p
+        recall_list    = test_results.box.r
+        for i, name in enumerate(class_names_list):
+            if i < len(ap50_list):
+                p = float(precision_list[i])
+                r = float(recall_list[i])
+                f1 = round(2 * p * r / (p + r), 4) if (p + r) > 0 else 0.0
+                class_metrics[name] = {
+                    "mAP50"    : round(float(ap50_list[i]), 4),
+                    "precision": round(p, 4),
+                    "recall"   : round(r, 4),
+                    "f1"       : f1,
+                }
+    except Exception:
+        pass
+
     metrics = {
-        "mAP50"       : round(float(test_results.box.map50), 4),
-        "mAP50_95"    : round(float(test_results.box.map),   4),
-        "precision"   : round(float(test_results.box.mp),    4),
-        "recall"      : round(float(test_results.box.mr),    4),
-        "classes"     : ["COC_will_mature", "COC_will_not_mature"],
-        "model"       : "YOLOv8s-seg",
-        "device"      : gpu_name if device == "0" else "CPU",
-        "dataset"     : "instance_Seg v7 (Roboflow)",
-        "train_images": 630,
-        "val_images"  : 60,
-        "test_images" : 30,
+        "mAP50"        : round(float(test_results.box.map50), 4),
+        "mAP50_95"     : round(float(test_results.box.map),   4),
+        "precision"    : round(float(test_results.box.mp),    4),
+        "recall"       : round(float(test_results.box.mr),    4),
+        "classes"      : class_names_list,
+        "class_metrics": class_metrics,
+        "model"        : "YOLOv8s-seg",
+        "device"       : gpu_name if device == "0" else "CPU",
+        "dataset"      : "instance_Seg v7 (Roboflow)",
+        "train_images" : 630,
+        "val_images"   : 60,
+        "test_images"  : 30,
     }
 
     metrics_path = RESULTS_DIR / "metrics.json"
