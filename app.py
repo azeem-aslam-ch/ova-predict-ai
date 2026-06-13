@@ -13,6 +13,7 @@ Features:
   - Show model accuracy metrics in sidebar
 """
 
+import io
 import json
 import re
 import tempfile
@@ -578,21 +579,28 @@ with tab_predict:
             st.info("Upload a COC microscopy image above to start the prediction.")
 
         else:
-            # ── Save to temp file ─────────────────────────────────────────────
-            suffix = Path(uploaded.name).suffix or ".jpg"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(uploaded.read())
-                tmp_path = Path(tmp.name)
+            # ── Read image bytes once (getvalue is idempotent) ────────────────
+            img_bytes = uploaded.getvalue()
 
+            # ── Decode image from memory (no file-system dependency) ──────────
+            img_read_error = None
             try:
-                pil_img = Image.open(tmp_path).convert("RGB")
+                pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                 img_rgb = np.array(pil_img)
                 img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-            except Exception:
+            except Exception as _e:
                 img_bgr = None
                 img_rgb = None
+                img_read_error = str(_e)
+
+            # ── Write temp file for YOLO (needs a file path) ─────────────────
+            suffix = Path(uploaded.name).suffix or ".jpg"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(img_bytes)
+                tmp_path = Path(tmp.name)
+
             if img_bgr is None:
-                st.error("Could not read image. Please try a different file.")
+                st.error(f"Could not read image: {img_read_error or 'unknown error'}")
             else:
 
                 # ── Run prediction ────────────────────────────────────────────
