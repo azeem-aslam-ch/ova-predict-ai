@@ -6,11 +6,11 @@ Live App: [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
 
 ---
 
-## What Is This?
+## Overview
 
-OvaPredict is a web-based tool that analyzes microscopy images of Cumulus-Oocyte Complexes (COCs) and predicts whether the oocyte will mature or not. It was built as part of a thesis project to assist embryologists in IVF labs by providing a faster, more consistent second opinion on oocyte quality.
+OvaPredict is a deep learning system developed in collaboration with **UVAS (University of Veterinary and Animal Sciences), Lahore** for the automated assessment of oocyte maturation potential from COC microscopy images. Biological data is collected and curated by domain experts at UVAS, and the model is trained on that data to produce clinical-grade predictions.
 
-The system uses YOLOv8s-seg to detect and segment the COC, extract morphological measurements from the segmentation mask, and classify the oocyte into one of two categories: **Will MATURE** or **Will NOT Mature**.
+The system uses YOLOv8s-seg to detect and segment the COC at pixel level, extract quantitative morphological measurements from the segmentation mask, and classify the oocyte as **Will MATURE** or **Will NOT Mature** — along with a confidence score and biological reasoning tailored to each prediction.
 
 ---
 
@@ -155,10 +155,12 @@ The dataset was sourced from Roboflow (instance_Seg v7, CC BY 4.0). It contains 
 
 ---
 
-## Thesis
+## About This Project
 
-**Title:** Development and Biological Validation of an Artificial Intelligence Based Model for Oocyte Maturation Prediction
+This is a collaborative research project with the **University of Veterinary and Animal Sciences (UVAS), Lahore**. The biological data — COC microscopy images with expert-level annotations — is collected and provided by researchers and embryologists at UVAS who specialize in reproductive biology and assisted reproduction techniques.
 
-This repository contains the complete implementation for the above thesis. The objective is to give embryologists a tool that makes oocyte assessment faster, more consistent, and less dependent on individual expertise.
+The computational side involves building and training a deep learning pipeline on that data: designing the segmentation model, curating the training set, optimizing hyperparameters, evaluating performance, and deploying the final system as a usable clinical tool.
+
+The collaboration bridges two domains — biological expertise from UVAS and machine learning — to produce something neither side could achieve independently. The result is a system that encodes years of embryological knowledge into a model that can assess oocyte quality from a microscopy image in milliseconds.
 
 Live App: [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
