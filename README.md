@@ -4,6 +4,8 @@
 
 An AI-powered system that looks at microscopy images of egg cells (oocytes) and predicts whether they will mature successfully — built with YOLOv8 instance segmentation.
 
+**Live Demo:** [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
+
 ---
 
 ## Table of Contents
@@ -59,7 +61,7 @@ This is what our AI has learned to detect and classify.
 
 ## 3. How Does the AI Work?
 
-The AI uses a model called **YOLOv8n-seg** (You Only Look Once — version 8, nano, segmentation).
+The AI uses a model called **YOLOv8s-seg** (You Only Look Once — version 8, small, segmentation).
 
 Here is the process step by step:
 
@@ -71,7 +73,7 @@ Step 2: YOLOv8 scans the entire image
 Step 3: It draws a pixel-precise mask around the COC
            ↓
 Step 4: It measures the shape of that mask
-        (circularity, area, density)
+        (circularity, area, density, aspect ratio)
            ↓
 Step 5: It classifies the COC as:
         - COC_will_mature   (class 0)
@@ -93,21 +95,30 @@ For every image you give it, the system produces:
 | Output | Description |
 |--------|-------------|
 | **Verdict** | "Will MATURE" or "Will NOT Mature" |
-| **Confidence Score** | A percentage (e.g., 87%) showing how sure the model is |
-| **Segmentation Overlay** | The original image with a colored mask drawn over the COC |
-| **Morphological Reason** | Explanation based on circularity, area, and pixel density of the detected region |
-| **Model Accuracy Metrics** | mAP50, Precision, Recall shown in the app sidebar |
+| **Confidence Score** | How certain the model is about this specific image (0–100%) |
+| **Segmentation Overlay** | Original image with a colored mask drawn over the COC (green = mature, red = not mature) |
+| **Feature Agreement** | How many of the 4 morphological features support the prediction (e.g., 3/4) |
+| **COCs Detected** | Total number of COC objects found in the image |
+| **Inference Time** | How many milliseconds the model took to analyze the image |
+| **Morphological Measurements** | Circularity, Area, Aspect Ratio, Extent, Perimeter |
+| **Biological Reasoning** | Written explanation of why this prediction was made, adapted to the result |
+| **Ground Truth Tracking** | Optional — enter the correct answer to track real-time session accuracy |
+| **Session Accuracy** | Running Accuracy, Precision, Recall, F1 across all labeled images in the session |
+| **Model Accuracy Metrics** | mAP50, Precision, Recall shown in the app sidebar (from 30 test images) |
 
 **Example output in the web app:**
 
 ```
 Image uploaded: sample_coc.jpg
 
-Verdict:     Will MATURE ✅
-Confidence:  91.3%
-Circularity: 0.87  (1.0 = perfect circle)
-Area:        4,230 px²
-Density:     0.74
+Verdict:          Will MATURE ✅
+Confidence:       91.3%
+Feature Agreement: 3/4 features support this prediction
+COCs Detected:    1
+Inference Time:   5.6 ms
+Circularity:      0.87  (max = 1.0)
+Area:             4,230 px²  (6.2% of image)
+Perimeter:        298.4 px
 
 Reason: High circularity and compact area suggest a healthy, mature COC.
 ```
@@ -119,7 +130,7 @@ Reason: High circularity and compact area suggest a healthy, mature COC.
 ```
 OvaPredict AI/
 │
-├── data/                                  ← All training images live here
+├── data/                                  ← All training images live here (not in repo — too large)
 │   └── instance_Seg.v7i.yolov8/
 │       ├── train/
 │       │   ├── images/                    ← 630 images used to TRAIN the model
@@ -134,23 +145,18 @@ OvaPredict AI/
 ├── config/
 │   └── dataset.yaml                       ← Tells YOLOv8 where the data is and class names
 │
-├── results/                               ← This folder is created automatically after training
+├── results/                               ← Created automatically after training
 │   ├── train/
 │   │   ├── weights/
-│   │   │   ├── best.pt                    ← The BEST model saved during training (use this)
-│   │   │   └── last.pt                    ← The model from the final epoch
-│   │   ├── confusion_matrix.png           ← Shows correct vs incorrect predictions
-│   │   ├── PR_curve.png                   ← Precision-Recall graph
-│   │   ├── F1_curve.png                   ← F1 score across confidence thresholds
+│   │   │   └── best.pt                    ← The BEST model saved during training
+│   │   ├── confusion_matrix_normalized.png
+│   │   ├── BoxPR_curve.png
+│   │   ├── MaskPR_curve.png
 │   │   └── results.png                    ← Training loss and metrics over epochs
 │   │
 │   ├── test_eval/                         ← Evaluation results on the test set
 │   │
-│   ├── predictions/                       ← Output from running predict.py
-│   │   ├── latest/                        ← Annotated images (mask drawn on them)
-│   │   └── summary.csv                    ← A spreadsheet of all predictions made
-│   │
-│   └── metrics.json                       ← mAP50, Precision, Recall — loaded by the web app
+│   └── metrics.json                       ← mAP50, Precision, Recall, F1 — loaded by the web app
 │
 ├── train.py                               ← Run this FIRST to train the AI model
 ├── predict.py                             ← Run this to predict on images from command line
@@ -158,12 +164,6 @@ OvaPredict AI/
 ├── requirements.txt                       ← List of all Python packages needed
 └── README.md                              ← This file
 ```
-
-**Key files you will interact with:**
-- `train.py` — trains the model (do this once)
-- `app.py` — the web interface (use this daily)
-- `predict.py` — for batch predictions without opening a browser
-- `results/train/weights/best.pt` — the trained model file (created after training)
 
 ---
 
@@ -185,11 +185,7 @@ git clone https://github.com/azeem-aslam-ch/ova-predict-ai.git
 cd ova-predict-ai
 ```
 
-Or download the ZIP file from GitHub and extract it.
-
 **Step 2: (Optional but recommended) Create a virtual environment**
-
-A virtual environment keeps this project's packages separate from your other Python projects:
 
 ```bash
 # Create virtual environment
@@ -202,15 +198,11 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-You will see `(venv)` appear at the start of your terminal line — that means it is active.
-
 **Step 3: Install all required packages**
 
 ```bash
 pip install -r requirements.txt
 ```
-
-This installs everything automatically (YOLOv8, Streamlit, OpenCV, etc.). It may take 2-5 minutes.
 
 **Verify installation:**
 
@@ -218,153 +210,120 @@ This installs everything automatically (YOLOv8, Streamlit, OpenCV, etc.). It may
 python -c "from ultralytics import YOLO; print('YOLOv8 ready')"
 ```
 
-If it prints `YOLOv8 ready`, you are good to go.
-
 ---
 
 ## 7. Usage — How to Run Everything
 
-### Step 1 — Train the Model
+### Option A — Use the Live App (No Installation)
 
-> Skip this step if you already have `results/train/weights/best.pt`
+Go directly to: [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
+
+Upload a COC image and get a prediction instantly — no setup required.
+
+---
+
+### Option B — Run Locally
+
+**Step 1 — Train the Model** *(skip if `results/train/weights/best.pt` already exists)*
 
 ```bash
 python train.py
 ```
 
-**What happens when you run this:**
-
+What happens:
 1. YOLOv8 loads the dataset from the `data/` folder
-2. It trains for up to **100 epochs** (one epoch = the model sees all 630 training images once)
-3. After every epoch it checks performance on the **60 validation images**
-4. If performance does not improve for **20 consecutive epochs**, training stops early (this saves time)
-5. The best-performing model is saved to `results/train/weights/best.pt`
-6. Accuracy metrics are saved to `results/metrics.json`
+2. Trains for up to **100 epochs** with early stopping (patience = 20)
+3. Best model saved to `results/train/weights/best.pt`
+4. Accuracy metrics saved to `results/metrics.json`
 
-**Training time:** ~10-40 minutes depending on your hardware (much faster with a GPU).
-
-**What you will see on screen:**
-
-```
-Epoch 1/100:  loss=1.432  mAP50=0.34
-Epoch 2/100:  loss=1.201  mAP50=0.41
-...
-Epoch 47/100: loss=0.312  mAP50=0.89
-Early stopping at epoch 67 (no improvement for 20 epochs)
-Best model saved: results/train/weights/best.pt
-```
+Training time: ~10–40 minutes depending on hardware.
 
 ---
 
-### Step 2 — Launch the Web App
+**Step 2 — Launch the Web App**
 
 ```bash
 streamlit run app.py
 ```
 
-Your browser will automatically open at:
+Opens at `http://localhost:8501`
 
-```
-http://localhost:8501
-```
+**How to use:**
 
-**How to use the web app:**
+1. Upload a COC microscopy image (JPG, PNG, TIFF)
+2. View prediction, confidence, segmentation overlay, and biological reasoning
+3. Optionally provide the correct answer (ground truth) to track session accuracy
+4. Use the **Microscope Calibration** input in the sidebar to show area in µm² and perimeter in µm
 
-1. Click **"Browse files"** or drag and drop a COC microscopy image (JPG, PNG, or TIFF)
-2. The model processes the image in seconds
-3. You will see:
-   - The original image on the left
-   - The image with segmentation mask on the right
-   - The verdict (Will MATURE or Will NOT Mature)
-   - The confidence percentage with a progress bar
-   - A written explanation of why this prediction was made
-4. In the **sidebar** (left panel), you can see the model's overall accuracy metrics
-
-| Web App Feature | What It Does |
-|-----------------|--------------|
+| Web App Feature | Description |
+|-----------------|-------------|
 | Image Upload | Accepts JPG, PNG, TIFF files |
-| Verdict | Big green or red result at the top |
-| Confidence Bar | Visual bar showing how certain the model is |
-| Segmentation Overlay | Colored mask drawn over the detected COC |
-| Reason Text | Explains the circularity, area, density values |
-| Sidebar Metrics | Shows mAP50, Precision, Recall from training |
+| Verdict | Green (Will MATURE) or Red (Will NOT Mature) result |
+| Confidence | How certain the model is — specific to this image |
+| Feature Agreement | X/4 morphological features supporting the prediction |
+| COCs Detected | Number of COC objects found in this image |
+| Inference Time | Model processing time in milliseconds |
+| Segmentation Overlay | Colored mask over the detected COC |
+| Biological Reasoning | Text explanation adapted to the actual prediction |
+| Ground Truth Input | Mark the correct answer to track real-time accuracy |
+| Session Accuracy | Sidebar shows running Accuracy, F1, Precision, Recall |
+| Microscope Calibration | Enter µm/pixel scale to show area in µm², perimeter in µm |
+| Confidence Threshold | Slider to control detection sensitivity |
+| Model Results Tab | Training curves, confusion matrix, PR/F1 curves |
 
 ---
 
-### Step 3 (Optional) — Command Line Prediction
-
-If you prefer to work in the terminal instead of a browser, use `predict.py`:
+**Step 3 (Optional) — Command Line Prediction**
 
 ```bash
-# Predict on a single image
+# Single image
 python predict.py data/instance_Seg.v7i.yolov8/test/images/my_image.jpg
 
-# Predict on all images in a folder
+# Entire folder
 python predict.py data/instance_Seg.v7i.yolov8/test/images/
 
-# Lower the confidence threshold (default is 0.25)
-# Use this if the model is not detecting anything
+# Custom confidence threshold
 python predict.py my_image.jpg --conf 0.15
-
-# Raise the threshold to only get high-confidence predictions
-python predict.py my_image.jpg --conf 0.50
 ```
 
-**Outputs produced:**
-
-- Terminal prints a summary table for each image
-- Annotated images saved to `results/predictions/latest/`
-- A CSV spreadsheet saved to `results/predictions/summary.csv` — open this in Excel
-
-**Example terminal output:**
-
-```
-Image               Class               Confidence   Circularity   Area
-my_image.jpg        COC_will_mature     91.3%        0.87          4230 px²
-image2.jpg          COC_will_not_mature 78.5%        0.51          1890 px²
-```
+Outputs: annotated images in `results/predictions/latest/` and a CSV at `results/predictions/summary.csv`.
 
 ---
 
 ## 8. Model Details
 
-| Property | Value | Explanation |
-|----------|-------|-------------|
-| Architecture | YOLOv8n-seg | YOLO version 8, nano size, segmentation type |
-| Dataset | instance_Seg v7 | 720 labeled COC images from Roboflow |
-| Classes | 2 | `COC_will_mature` and `COC_will_not_mature` |
-| Image size | 640 × 640 px | All images are resized to this before training |
-| Max epochs | 100 | Maximum training rounds |
-| Early stopping | patience=20 | Stops if no improvement for 20 epochs |
-| Train split | 630 images | Used to teach the model |
-| Validation split | 60 images | Used to tune the model during training |
-| Test split | 30 images | Used ONLY at the end to measure final accuracy |
+| Property | Value |
+|----------|-------|
+| Architecture | YOLOv8s-seg (small, segmentation) |
+| Dataset | instance_Seg v7 (Roboflow) |
+| Classes | 2 — `COC_will_mature` and `COC_will_not_mature` |
+| Image size | 640 × 640 px |
+| Max epochs | 100 (early stopping at patience = 20) |
+| Train split | 630 images |
+| Validation split | 60 images |
+| Test split | 30 images |
+| Augmentations | Rotation ±10°, translation ±5%, scale ±10% — flipping disabled (preserves morphology) |
 
-### Understanding the Accuracy Metrics
+### Test Set Performance (30 unseen images)
 
-After training, the model is evaluated using three key metrics:
+| Metric | Overall | COC_will_mature | COC_will_not_mature |
+|--------|---------|-----------------|---------------------|
+| mAP50 | 67.1% | 78.4% | 55.8% |
+| Precision | 56.8% | 73.6% | 39.9% |
+| Recall | 79.2% | 66.7% | 91.7% |
+| F1 Score | — | 70.0% | 55.6% |
 
-**mAP50 (Mean Average Precision at IoU 0.50)**
-- The primary accuracy metric for object detection
-- Measures how precisely the model detects AND classifies COCs
-- A value of 0.85 means the model is correct 85% of the time
-- Higher is better (max = 1.0)
+### Understanding the Metrics
 
-**Precision**
-- Of all the COCs the model said "will mature" — what fraction actually were mature?
-- High precision = few false positives (model does not over-predict maturity)
+**mAP50** — Primary accuracy score. Measures how precisely the model detects and classifies COCs (50% overlap required).
 
-**Recall**
-- Of all the COCs that actually were mature — what fraction did the model correctly catch?
-- High recall = few false negatives (model does not miss mature oocytes)
+**Precision** — Of all "Will MATURE" predictions, how many were actually correct. High precision = few false alarms.
 
-**F1 Score**
-- The balance between Precision and Recall
-- Useful when you want neither too many false positives nor false negatives
+**Recall** — Of all actual mature COCs, how many did the model find. High recall = few missed cases. The model has high recall for `COC_will_not_mature` (91.7%) — meaning it rarely misses an immature COC.
 
-**Confusion Matrix**
-- A grid showing: correct predictions vs mistakes
-- Tells you if the model confuses one class for the other
+**F1 Score** — Harmonic mean of Precision and Recall. Best single-number summary of reliability.
+
+**Feature Agreement** — An additional per-image reliability indicator computed from morphological shape features (circularity, size, extent, aspect ratio). Shows how many of 4 measured features support the model's prediction.
 
 ---
 
@@ -373,19 +332,13 @@ After training, the model is evaluated using three key metrics:
 | Property | Details |
 |----------|---------|
 | Source | Roboflow — `instance_seg-e3puo` project, version 7 |
-| License | CC BY 4.0 (free to use with attribution) |
+| License | CC BY 4.0 |
 | Total images | 720 microscopy images of COCs |
 | Classes | 2 — `COC_will_mature` (class 0) and `COC_will_not_mature` (class 1) |
-| Label type | Polygon masks (not simple rectangles) |
+| Label type | Polygon masks |
 | Format | YOLOv8 segmentation format |
 
-**What are polygon mask labels?**
-
-Instead of drawing a simple rectangle (bounding box) around the COC, annotators traced the exact outline of each COC — point by point — creating a polygon shape. This gives the model precise boundary information, which is critical because COC shape correlates directly with egg quality.
-
-**Why does class balance matter?**
-
-If the dataset has 600 "will mature" examples and only 120 "will not mature" examples, the model might learn to just always predict "will mature." The dataset was designed to keep both classes reasonably balanced to avoid this bias.
+Annotators traced the exact outline of each COC point-by-point rather than drawing rectangles, giving the model precise boundary information critical for shape-based classification.
 
 ---
 
@@ -396,19 +349,24 @@ If the dataset has 600 "will mature" examples and only 120 "will not mature" exa
 | **Oocyte** | A female egg cell, before it is fertilized |
 | **COC** | The egg cell + the surrounding cloud of support cells |
 | **Maturation** | The process where the egg cell becomes ready to be fertilized |
-| **IVF** | In Vitro Fertilization — fertilizing an egg outside the body (test-tube baby) |
-| **YOLOv8** | A fast and accurate AI model for detecting objects in images |
-| **Instance Segmentation** | Drawing a pixel-exact mask around each detected object (better than a rectangle) |
+| **IVF** | In Vitro Fertilization — fertilizing an egg outside the body |
+| **YOLOv8s-seg** | A fast and accurate AI model for detecting and segmenting objects in images |
+| **Instance Segmentation** | Drawing a pixel-exact mask around each detected object |
 | **Epoch** | One complete pass through all training images |
-| **mAP50** | The main accuracy score for object detection models |
+| **mAP50** | Mean Average Precision — the main accuracy score for detection models |
 | **Precision** | How many of the model's positive predictions were correct |
 | **Recall** | How many of the actual positives the model found |
-| **Confidence Score** | How certain the model is about its prediction (0% to 100%) |
+| **F1 Score** | Harmonic mean of Precision and Recall — balanced accuracy measure |
+| **Feature Agreement** | How many morphological shape features support the prediction (X/4) |
+| **Ground Truth** | The known correct answer for a given image |
+| **Session Accuracy** | Real-time running accuracy tracked as you label images during use |
+| **Confidence Score** | How certain the model is about its prediction for a specific image |
 | **Circularity** | How close to a perfect circle the COC shape is (1.0 = perfect circle) |
+| **Extent** | How fully the COC fills its bounding box (1.0 = completely fills it) |
+| **µm/pixel** | Microscope calibration scale — converts pixel measurements to micrometers |
 | **Streamlit** | A Python library that turns scripts into interactive web apps |
 | **Roboflow** | A platform for managing and labeling computer vision datasets |
 | **best.pt** | The saved model file (`.pt` = PyTorch format) |
-| **Virtual environment** | An isolated Python workspace so packages don't conflict |
 
 ---
 
@@ -417,3 +375,5 @@ If the dataset has 600 "will mature" examples and only 120 "will not mature" exa
 **Title:** Development and Biological Validation of an Artificial Intelligence Based Model for Oocyte Maturation Prediction
 
 This project is the software implementation behind the thesis research. The goal is to provide embryologists with an AI-assisted tool that improves the consistency, speed, and accuracy of oocyte selection during fertility treatments.
+
+**Live App:** [ova-predict-ai.streamlit.app](https://ova-predict-ai.streamlit.app/)
