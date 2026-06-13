@@ -582,16 +582,30 @@ with tab_predict:
             # ── Read image bytes once (getvalue is idempotent) ────────────────
             img_bytes = uploaded.getvalue()
 
-            # ── Decode image from memory (no file-system dependency) ──────────
+            # ── Decode image from memory ──────────────────────────────────────
+            # Allow truncated/non-standard PNG chunks (common in microscopy files)
+            from PIL import ImageFile as _ImageFile
+            _ImageFile.LOAD_TRUNCATED_IMAGES = True
+
             img_read_error = None
+            img_bgr = None
+            img_rgb = None
             try:
                 pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                 img_rgb = np.array(pil_img)
                 img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-            except Exception as _e:
-                img_bgr = None
-                img_rgb = None
-                img_read_error = str(_e)
+            except Exception:
+                pass
+
+            if img_bgr is None:
+                # Fallback: OpenCV in-memory decode (handles broken PNG chunks PIL rejects)
+                try:
+                    nparr = np.frombuffer(img_bytes, np.uint8)
+                    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if img_bgr is not None:
+                        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                except Exception as _e2:
+                    img_read_error = str(_e2)
 
             # ── Write temp file for YOLO (needs a file path) ─────────────────
             suffix = Path(uploaded.name).suffix or ".jpg"
