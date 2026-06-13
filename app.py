@@ -584,11 +584,16 @@ with tab_predict:
                 tmp.write(uploaded.read())
                 tmp_path = Path(tmp.name)
 
-            img_bgr = cv2.imread(str(tmp_path))
+            try:
+                pil_img = Image.open(tmp_path).convert("RGB")
+                img_rgb = np.array(pil_img)
+                img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+            except Exception:
+                img_bgr = None
+                img_rgb = None
             if img_bgr is None:
                 st.error("Could not read image. Please try a different file.")
             else:
-                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
                 # ── Run prediction ────────────────────────────────────────────
                 with st.spinner("Analyzing image..."):
