@@ -602,6 +602,12 @@ with tab_predict:
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     if img_bgr is not None:
+                        # Crop black rows at bottom (partial decode artifact from broken PNG)
+                        # Find last row that is not all-zero
+                        row_max = img_bgr.max(axis=(1, 2))
+                        valid_rows = np.where(row_max > 0)[0]
+                        if valid_rows.size > 0:
+                            img_bgr = img_bgr[:valid_rows[-1] + 1]
                         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
                 except Exception as _e2:
                     img_read_error = str(_e2)
